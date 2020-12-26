@@ -22,7 +22,7 @@
 
     string fsSource = @"
     void main() {
-      gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
     }
     ";
 
@@ -93,13 +93,15 @@
         await _context.DepthFuncAsync(CompareFunction.LEQUAL);
         await _context.ClearAsync(BufferBits.COLOR_BUFFER_BIT | BufferBits.DEPTH_BUFFER_BIT);
 
-        var fieldOfView = 45.0 * Math.PI / 180.0;
+        var fieldOfView = 45.0f * (float)Math.PI / 180.0f;
         var aspect = _canvasReference.Width / _canvasReference.Height;
-        var zNear = 0.1;
-        var zFar = 100.0;
+        var zNear = 0.1f;
+        var zFar = 100.0f;
 
-        float[] projectionMatrix = new float[16];
-        float[] modelViewMatrix = new float[16];
+        var projectionMatrix = Matrix.Projection(fieldOfView, aspect, zNear, zFar);
+
+        var modelViewMatrix = new Matrix();
+        modelViewMatrix.Translate(0.0f, 0.0f, -16.0f);
         
         uint vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
 
@@ -112,8 +114,8 @@
         var projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
         var modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
 
-        await _context.UniformMatrixAsync(projectionMatrixLocation, false, projectionMatrix);
-        await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix);
+        await _context.UniformMatrixAsync(projectionMatrixLocation, false, projectionMatrix.Values);
+        await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix.Values);
 
         await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4);
     }
