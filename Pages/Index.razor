@@ -1,0 +1,120 @@
+@page "/"
+
+<div @ref="divCanvas">
+    <BECanvas @ref="_canvasReference" Height="800" Width="800"></BECanvas>
+</div>
+
+@code {
+    ElementReference divCanvas;
+    BECanvasComponent _canvasReference;
+    WebGLContext _context;
+
+    string vsSource = @"
+    attribute vec4 aVertexPosition;
+
+    uniform mat4 uModelViewMatrix;
+    uniform mat4 uProjectionMatrix;
+
+    void main() {
+      gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+    }
+    ";
+
+    string fsSource = @"
+    void main() {
+      gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    }
+    ";
+
+    protected async Task<WebGLShader> LoadShader(ShaderType type, string source)
+    {
+        var shader = await _context.CreateShaderAsync(type);
+        await _context.ShaderSourceAsync(shader, source);
+        await _context.CompileShaderAsync(shader);
+        return shader;
+    }
+
+    protected async Task<WebGLProgram> InitShaderProgram()
+    {
+        var vertexShader = await LoadShader(ShaderType.VERTEX_SHADER, vsSource);
+        var fragmentShader = await LoadShader(ShaderType.FRAGMENT_SHADER, fsSource);
+
+        var shaderProgram = await _context.CreateProgramAsync();
+        await _context.AttachShaderAsync(shaderProgram, vertexShader);
+        await _context.AttachShaderAsync(shaderProgram, fragmentShader);
+        await _context.LinkProgramAsync(shaderProgram);
+        return shaderProgram;
+    }
+
+    protected async Task<WebGLBuffer> InitPositionBuffer()
+    {
+        var positionBuffer = await _context.CreateBufferAsync();
+        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
+
+        float[] positions = new float[] {
+            -1.0f, 1.0f,
+            1.0f, 1.0f,
+            -1.0f, -1.0f,
+            1.0f, -1.0f
+        };
+
+        await _context.BufferDataAsync<float>(BufferType.ARRAY_BUFFER, positions, BufferUsageHint.STATIC_DRAW);
+
+        return positionBuffer;
+    }
+
+    protected async Task<WebGLBuffer> InitColourBuffer()
+    {
+        float[] colours = new float[] 
+        {
+            1.0f, 1.0f, 1.0f, 1.0f, // white
+            1.0f, 0.0f, 0.0f, 1.0f, // red
+            0.0f, 1.0f, 0.0f, 1.0f, // green
+            0.0f, 0.0f, 1.0f, 1.0f  // blue
+        };
+
+        var colourBuffer = await _context.CreateBufferAsync();
+        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
+        await _context.BufferDataAsync<float>(BufferType.ARRAY_BUFFER, colours, BufferUsageHint.STATIC_DRAW);
+        return colourBuffer;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _context = await _canvasReference.CreateWebGLAsync();
+
+        var shaderProgram = await InitShaderProgram();
+        var colourBuffer = await InitColourBuffer();
+        var positionBuffer = await InitPositionBuffer();
+
+        await _context.ClearColorAsync(0, 0, 0, 1);
+        await _context.ClearDepthAsync(1.0f);
+        await _context.EnableAsync(EnableCap.DEPTH_TEST);
+        await _context.DepthFuncAsync(CompareFunction.LEQUAL);
+        await _context.ClearAsync(BufferBits.COLOR_BUFFER_BIT | BufferBits.DEPTH_BUFFER_BIT);
+
+        var fieldOfView = 45.0 * Math.PI / 180.0;
+        var aspect = _canvasReference.Width / _canvasReference.Height;
+        var zNear = 0.1;
+        var zFar = 100.0;
+
+        float[] projectionMatrix = new float[16];
+        float[] modelViewMatrix = new float[16];
+        
+        uint vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
+
+        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
+        await _context.VertexAttribPointerAsync(vertexPosition, 2, DataType.FLOAT, false, 0, 0);
+        await _context.EnableVertexAttribArrayAsync(vertexPosition);
+
+        await _context.UseProgramAsync(shaderProgram);
+
+        var projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
+        var modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
+
+        await _context.UniformMatrixAsync(projectionMatrixLocation, false, projectionMatrix);
+        await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix);
+
+        await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4);
+    }
+}
