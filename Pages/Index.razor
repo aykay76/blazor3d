@@ -9,7 +9,7 @@
     BECanvasComponent _canvasReference;
     WebGLContext _context;
 
-    float squareRotation = 0.0f;
+    float cubeRotation = 0.0f;
 
     string vsSource = @"
     attribute vec4 aVertexPosition;
@@ -68,16 +68,66 @@
         return shaderProgram;
     }
 
+    protected async Task<WebGLBuffer> InitIndexBuffer()
+    {
+        var indexBuffer = await _context.CreateBufferAsync();
+        await _context.BindBufferAsync(BufferType.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+        ushort[] indices = new ushort[] {
+            0,  1,  2,      0,  2,  3,    // front
+            4,  5,  6,      4,  6,  7,    // back
+            8,  9,  10,     8,  10, 11,   // top
+            12, 13, 14,     12, 14, 15,   // bottom
+            16, 17, 18,     16, 18, 19,   // right
+            20, 21, 22,     20, 22, 23    // left
+        };
+
+        await _context.BufferDataAsync<ushort>(BufferType.ELEMENT_ARRAY_BUFFER, indices, BufferUsageHint.STATIC_DRAW);
+
+        return indexBuffer;
+    }
+
     protected async Task<WebGLBuffer> InitPositionBuffer()
     {
         var positionBuffer = await _context.CreateBufferAsync();
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
 
         float[] positions = new float[] {
-            1.0f, 1.0f,
-            -1.0f, 1.0f,
-            1.0f, -1.0f,
-            -1.0f, -1.0f
+            // Front face
+            -1.0f, -1.0f,  1.0f,
+            1.0f, -1.0f,  1.0f,
+            1.0f,  1.0f,  1.0f,
+            -1.0f,  1.0f,  1.0f,
+
+            // Back face
+            -1.0f, -1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f,
+            1.0f,  1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+
+            // Top face
+            -1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f,  1.0f,
+            1.0f,  1.0f,  1.0f,
+            1.0f,  1.0f, -1.0f,
+
+            // Bottom face
+            -1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f,  1.0f,
+            -1.0f, -1.0f,  1.0f,
+
+            // Right face
+            1.0f, -1.0f, -1.0f,
+            1.0f,  1.0f, -1.0f,
+            1.0f,  1.0f,  1.0f,
+            1.0f, -1.0f,  1.0f,
+
+            // Left face
+            -1.0f, -1.0f, -1.0f,
+            -1.0f, -1.0f,  1.0f,
+            -1.0f,  1.0f,  1.0f,
+            -1.0f,  1.0f, -1.0f
         };
 
         await _context.BufferDataAsync<float>(BufferType.ARRAY_BUFFER, positions, BufferUsageHint.STATIC_DRAW);
@@ -87,13 +137,28 @@
 
     protected async Task<WebGLBuffer> InitColourBuffer()
     {
-        float[] colours = new float[] 
+        float[] faceColours = new float[] 
         {
             1.0f, 1.0f, 1.0f, 1.0f, // white
             1.0f, 0.0f, 0.0f, 1.0f, // red
             0.0f, 1.0f, 0.0f, 1.0f, // green
-            0.0f, 0.0f, 1.0f, 1.0f  // blue
+            0.0f, 0.0f, 1.0f, 1.0f, // blue
+            1.0f, 1.0f, 0.0f, 1.0f, // yellow
+            1.0f, 0.0f, 1.0f, 1.0f  // magenta
         };
+
+        float[] colours = new float[24 * 4];
+        int c = 0;
+        for (int i = 0; i < 6; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                colours[c++] = faceColours[i * 4 + 0];
+                colours[c++] = faceColours[i * 4 + 1];
+                colours[c++] = faceColours[i * 4 + 2];
+                colours[c++] = faceColours[i * 4 + 3];
+            }
+        }
 
         var colourBuffer = await _context.CreateBufferAsync();
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
@@ -108,6 +173,7 @@
         var shaderProgram = await InitShaderProgram();
         var colourBuffer = await InitColourBuffer();
         var positionBuffer = await InitPositionBuffer();
+        var indexBuffer = await InitIndexBuffer();
 
         uint vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
         uint vertexColour = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexColour");
@@ -132,27 +198,31 @@
 
         var modelViewMatrix = new Matrix();
         modelViewMatrix.Translate(-0.0f, 0.0f, -6.0f);
-        modelViewMatrix.Rotate(squareRotation, 0.0f, 0.0f, 1.0f);
+        modelViewMatrix.Rotate(cubeRotation, 0.0f, 0.0f, 1.0f);
+        modelViewMatrix.Rotate(cubeRotation * 0.7f, 0.0f, 1.0f, 0.0f);
         
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
-        await _context.VertexAttribPointerAsync(vertexPosition, 2, DataType.FLOAT, false, 0, 0);
+        await _context.VertexAttribPointerAsync(vertexPosition, 3, DataType.FLOAT, false, 0, 0);
         await _context.EnableVertexAttribArrayAsync(vertexPosition);
 
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
         await _context.VertexAttribPointerAsync(vertexColour, 4, DataType.FLOAT, false, 0, 0);
         await _context.EnableVertexAttribArrayAsync(vertexColour);
 
+        await _context.BindBufferAsync(BufferType.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
         await _context.UseProgramAsync(shaderProgram);
 
         await _context.UniformMatrixAsync(projectionMatrixLocation, false, projectionMatrix.Values);
         await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix.Values);
 
-        await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4);
+        @* await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4); *@
+        await _context.DrawElementsAsync(Primitive.TRIANGLES, 36, DataType.UNSIGNED_SHORT, 0);
 
         await _context.EndBatchAsync();
 
         // force simple animation by updating rotation and triggering state change
-        squareRotation += 0.01f;
+        cubeRotation += 0.01f;
         StateHasChanged();
     }
 }
