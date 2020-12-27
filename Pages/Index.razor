@@ -9,6 +9,8 @@
     BECanvasComponent _canvasReference;
     WebGLContext _context;
 
+    float squareRotation = 0.0f;
+
     string vsSource = @"
     attribute vec4 aVertexPosition;
     attribute vec4 aVertexColour;
@@ -130,6 +132,7 @@
 
         var modelViewMatrix = new Matrix();
         modelViewMatrix.Translate(-0.0f, 0.0f, -6.0f);
+        modelViewMatrix.Rotate(squareRotation, 0.0f, 0.0f, 1.0f);
         
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
         await _context.VertexAttribPointerAsync(vertexPosition, 2, DataType.FLOAT, false, 0, 0);
@@ -147,5 +150,9 @@
         await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4);
 
         await _context.EndBatchAsync();
+
+        // force simple animation by updating rotation and triggering state change
+        squareRotation += 0.01f;
+        StateHasChanged();
     }
 }
