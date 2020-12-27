@@ -19,7 +19,7 @@ public class Matrix
         Values[15] = 1.0f;
     }
 
-    public static Matrix Projection(float fovy, float aspect, float near, float far)
+    public static Matrix Perspective(float fovy, float aspect, float near, float far)
     {
         Matrix m = new Matrix();
 
@@ -40,7 +40,7 @@ public class Matrix
         m.Values[13] = 0.0f;
         m.Values[15] = 0.0f;
 
-        if (far == double.PositiveInfinity) 
+        if (far == double.NaN) 
         {
             m.Values[10] = -1.0f;
             m.Values[14] = -2.0f * near;

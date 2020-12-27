@@ -1,7 +1,7 @@
 @page "/"
 
 <div @ref="divCanvas">
-    <BECanvas @ref="_canvasReference" Height="800" Width="800"></BECanvas>
+    <BECanvas @ref="_canvasReference" Height="600" Width="800"></BECanvas>
 </div>
 
 @code {
@@ -11,18 +11,24 @@
 
     string vsSource = @"
     attribute vec4 aVertexPosition;
+    attribute vec4 aVertexColour;
 
     uniform mat4 uModelViewMatrix;
     uniform mat4 uProjectionMatrix;
 
-    void main() {
+    varying lowp vec4 vColour;
+
+    void main(void) {
       gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+      vColour = aVertexColour;
     }
     ";
 
     string fsSource = @"
-    void main() {
-      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    varying lowp vec4 vColour;
+
+    void main(void) {
+      gl_FragColor = vColour;
     }
     ";
 
@@ -31,6 +37,13 @@
         var shader = await _context.CreateShaderAsync(type);
         await _context.ShaderSourceAsync(shader, source);
         await _context.CompileShaderAsync(shader);
+
+        bool status = await _context.GetShaderParameterAsync<bool>(shader, ShaderParameter.COMPILE_STATUS);
+        if (status == false)
+        {
+            throw new Exception(await _context.GetShaderInfoLogAsync(shader));
+        }
+
         return shader;
     }
 
@@ -43,6 +56,13 @@
         await _context.AttachShaderAsync(shaderProgram, vertexShader);
         await _context.AttachShaderAsync(shaderProgram, fragmentShader);
         await _context.LinkProgramAsync(shaderProgram);
+
+        bool status = await _context.GetProgramParameterAsync<bool>(shaderProgram, ProgramParameter.LINK_STATUS);
+        if (status == false)
+        {
+            throw new Exception(await _context.GetProgramInfoLogAsync(shaderProgram));
+        }
+
         return shaderProgram;
     }
 
@@ -52,10 +72,10 @@
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
 
         float[] positions = new float[] {
-            -1.0f, 1.0f,
             1.0f, 1.0f,
-            -1.0f, -1.0f,
-            1.0f, -1.0f
+            -1.0f, 1.0f,
+            1.0f, -1.0f,
+            -1.0f, -1.0f
         };
 
         await _context.BufferDataAsync<float>(BufferType.ARRAY_BUFFER, positions, BufferUsageHint.STATIC_DRAW);
@@ -87,36 +107,45 @@
         var colourBuffer = await InitColourBuffer();
         var positionBuffer = await InitPositionBuffer();
 
+        uint vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
+        uint vertexColour = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexColour");
+
+        var projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
+        var modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
+
         await _context.ClearColorAsync(0, 0, 0, 1);
         await _context.ClearDepthAsync(1.0f);
+
+        await _context.BeginBatchAsync();
         await _context.EnableAsync(EnableCap.DEPTH_TEST);
         await _context.DepthFuncAsync(CompareFunction.LEQUAL);
         await _context.ClearAsync(BufferBits.COLOR_BUFFER_BIT | BufferBits.DEPTH_BUFFER_BIT);
 
         var fieldOfView = 45.0f * (float)Math.PI / 180.0f;
-        var aspect = _canvasReference.Width / _canvasReference.Height;
+        float aspect = (float)_canvasReference.Width / (float)_canvasReference.Height;
         var zNear = 0.1f;
         var zFar = 100.0f;
 
-        var projectionMatrix = Matrix.Projection(fieldOfView, aspect, zNear, zFar);
+        var projectionMatrix = Matrix.Perspective(fieldOfView, aspect, zNear, zFar);
 
         var modelViewMatrix = new Matrix();
-        modelViewMatrix.Translate(0.0f, 0.0f, -16.0f);
+        modelViewMatrix.Translate(-0.0f, 0.0f, -6.0f);
         
-        uint vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
-
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
         await _context.VertexAttribPointerAsync(vertexPosition, 2, DataType.FLOAT, false, 0, 0);
         await _context.EnableVertexAttribArrayAsync(vertexPosition);
 
-        await _context.UseProgramAsync(shaderProgram);
+        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
+        await _context.VertexAttribPointerAsync(vertexColour, 4, DataType.FLOAT, false, 0, 0);
+        await _context.EnableVertexAttribArrayAsync(vertexColour);
 
-        var projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
-        var modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
+        await _context.UseProgramAsync(shaderProgram);
 
         await _context.UniformMatrixAsync(projectionMatrixLocation, false, projectionMatrix.Values);
         await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix.Values);
 
         await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4);
+
+        await _context.EndBatchAsync();
     }
 }
