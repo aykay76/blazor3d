@@ -13,24 +13,37 @@
 
     string vsSource = @"
     attribute vec4 aVertexPosition;
+    attribute vec3 aVertexNormal;
     attribute vec4 aVertexColour;
 
+    uniform mat4 uNormalMatrix;
     uniform mat4 uModelViewMatrix;
     uniform mat4 uProjectionMatrix;
 
     varying lowp vec4 vColour;
+    varying highp vec3 vLighting;
 
     void main(void) {
       gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
       vColour = aVertexColour;
+
+      highp vec3 ambientLight = vec3(0.3, 0.3, 0.3);
+      highp vec3 directionalLightColor = vec3(1, 1, 1);
+      highp vec3 directionalVector = normalize(vec3(0.85, 0.8, 0.75));
+
+      highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0);
+
+      highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0);
+      vLighting = ambientLight + (directionalLightColor * directional);
     }
     ";
 
     string fsSource = @"
     varying lowp vec4 vColour;
+    varying highp vec3 vLighting;
 
     void main(void) {
-      gl_FragColor = vColour;
+      gl_FragColor = vec4(vColour.rgb * vLighting, vColour.a);
     }
     ";
 
@@ -66,6 +79,53 @@
         }
 
         return shaderProgram;
+    }
+
+    protected async Task<WebGLBuffer> InitNormalBuffer()
+    {
+        var normalBuffer = await _context.CreateBufferAsync();
+        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, normalBuffer);
+
+        float[] normals = new float[] { 
+            0.0f,  0.0f,  1.0f,
+            0.0f,  0.0f,  1.0f,
+            0.0f,  0.0f,  1.0f,
+            0.0f,  0.0f,  1.0f,
+
+            // Back
+            0.0f,  0.0f, -1.0f,
+            0.0f,  0.0f, -1.0f,
+            0.0f,  0.0f, -1.0f,
+            0.0f,  0.0f, -1.0f,
+
+            // Top
+            0.0f,  1.0f,  0.0f,
+            0.0f,  1.0f,  0.0f,
+            0.0f,  1.0f,  0.0f,
+            0.0f,  1.0f,  0.0f,
+
+            // Bottom
+            0.0f, -1.0f,  0.0f,
+            0.0f, -1.0f,  0.0f,
+            0.0f, -1.0f,  0.0f,
+            0.0f, -1.0f,  0.0f,
+
+            // Right
+            1.0f,  0.0f,  0.0f,
+            1.0f,  0.0f,  0.0f,
+            1.0f,  0.0f,  0.0f,
+            1.0f,  0.0f,  0.0f,
+
+            // Left
+            -1.0f,  0.0f,  0.0f,
+            -1.0f,  0.0f,  0.0f,
+            -1.0f,  0.0f,  0.0f,
+            -1.0f,  0.0f,  0.0f
+        };
+
+        await _context.BufferDataAsync<float>(BufferType.ARRAY_BUFFER, normals, BufferUsageHint.STATIC_DRAW);
+
+        return normalBuffer;
     }
 
     protected async Task<WebGLBuffer> InitIndexBuffer()
@@ -166,6 +226,16 @@
         return colourBuffer;
     }
 
+    protected async Task<WebGLTexture> LoadTexture(string url)
+    {
+        WebGLTexture texture = await _context.CreateTextureAsync();
+        await _context.BindTextureAsync(TextureType.TEXTURE_2D, texture);
+
+        // TODO: too tired to do this right now, moving on to lighting
+
+        return texture;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         _context = await _canvasReference.CreateWebGLAsync();
@@ -174,12 +244,15 @@
         var colourBuffer = await InitColourBuffer();
         var positionBuffer = await InitPositionBuffer();
         var indexBuffer = await InitIndexBuffer();
+        var normalBuffer = await InitNormalBuffer();
 
         uint vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
         uint vertexColour = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexColour");
+        uint vertexNormal = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexNormal");
 
         var projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
         var modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
+        var normalMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uNormalMatrix");
 
         await _context.ClearColorAsync(0, 0, 0, 1);
         await _context.ClearDepthAsync(1.0f);
@@ -196,10 +269,12 @@
 
         var projectionMatrix = Matrix.Perspective(fieldOfView, aspect, zNear, zFar);
 
-        var modelViewMatrix = new Matrix();
-        modelViewMatrix.Translate(-0.0f, 0.0f, -6.0f);
-        modelViewMatrix.Rotate(cubeRotation, 0.0f, 0.0f, 1.0f);
-        modelViewMatrix.Rotate(cubeRotation * 0.7f, 0.0f, 1.0f, 0.0f);
+        var modelViewMatrix = new Matrix()
+            .Translate(-0.0f, 0.0f, -6.0f)
+            .Rotate(cubeRotation, 0.0f, 0.0f, 1.0f)
+            .Rotate(cubeRotation * 0.7f, 0.0f, 1.0f, 0.0f);
+
+        var normalMatrix = new Matrix().Invert(modelViewMatrix).Transpose();
         
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
         await _context.VertexAttribPointerAsync(vertexPosition, 3, DataType.FLOAT, false, 0, 0);
@@ -209,12 +284,17 @@
         await _context.VertexAttribPointerAsync(vertexColour, 4, DataType.FLOAT, false, 0, 0);
         await _context.EnableVertexAttribArrayAsync(vertexColour);
 
+        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, normalBuffer);
+        await _context.VertexAttribPointerAsync(vertexNormal, 3, DataType.FLOAT, false, 0, 0);
+        await _context.EnableVertexAttribArrayAsync(vertexNormal);
+
         await _context.BindBufferAsync(BufferType.ELEMENT_ARRAY_BUFFER, indexBuffer);
 
         await _context.UseProgramAsync(shaderProgram);
 
         await _context.UniformMatrixAsync(projectionMatrixLocation, false, projectionMatrix.Values);
         await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix.Values);
+        await _context.UniformMatrixAsync(normalMatrixLocation, false, normalMatrix.Values);
 
         @* await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4); *@
         await _context.DrawElementsAsync(Primitive.TRIANGLES, 36, DataType.UNSIGNED_SHORT, 0);
