@@ -4,10 +4,14 @@
     <BECanvas @ref="_canvasReference" Height="600" Width="800"></BECanvas>
 </div>
 
+<span>@frameTime</span>
+
 @code {
     ElementReference divCanvas;
     BECanvasComponent _canvasReference;
     WebGLContext _context;
+    int frameTime = 0;
+    DateTime lastFrame;
 
     float cubeRotation = 0.0f;
 
@@ -226,6 +230,18 @@
         return colourBuffer;
     }
 
+    WebGLProgram shaderProgram;
+    WebGLBuffer colourBuffer;
+    WebGLBuffer positionBuffer;
+    WebGLBuffer indexBuffer;
+    WebGLBuffer normalBuffer;
+    uint vertexPosition;
+    uint vertexColour;
+    uint vertexNormal;
+    WebGLUniformLocation projectionMatrixLocation;
+    WebGLUniformLocation modelViewMatrixLocation;
+    WebGLUniformLocation normalMatrixLocation;
+
     protected async Task<WebGLTexture> LoadTexture(string url)
     {
         WebGLTexture texture = await _context.CreateTextureAsync();
@@ -240,19 +256,20 @@
     {
         _context = await _canvasReference.CreateWebGLAsync();
 
-        var shaderProgram = await InitShaderProgram();
-        var colourBuffer = await InitColourBuffer();
-        var positionBuffer = await InitPositionBuffer();
-        var indexBuffer = await InitIndexBuffer();
-        var normalBuffer = await InitNormalBuffer();
-
-        uint vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
-        uint vertexColour = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexColour");
-        uint vertexNormal = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexNormal");
-
-        var projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
-        var modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
-        var normalMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uNormalMatrix");
+        if (firstRender)
+        {
+            shaderProgram = await InitShaderProgram();
+            colourBuffer = await InitColourBuffer();
+            positionBuffer = await InitPositionBuffer();
+            indexBuffer = await InitIndexBuffer();
+            normalBuffer = await InitNormalBuffer();
+            vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
+            vertexColour = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexColour");
+            vertexNormal = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexNormal");
+            projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
+            modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
+            normalMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uNormalMatrix");
+        }
 
         await _context.ClearColorAsync(0, 0, 0, 1);
         await _context.ClearDepthAsync(1.0f);
@@ -303,6 +320,11 @@
 
         // force simple animation by updating rotation and triggering state change
         cubeRotation += 0.01f;
+
+        // obtain the frame time
+        frameTime = (DateTime.Now - lastFrame).Milliseconds;
+        lastFrame = DateTime.Now;
+
         StateHasChanged();
     }
 }
