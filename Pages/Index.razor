@@ -1,4 +1,6 @@
 @page "/"
+@using System.Drawing
+@using System.Drawing.Imaging
 
 <div @ref="divCanvas">
     <BECanvas @ref="_canvasReference" Height="600" Width="800"></BECanvas>
@@ -8,14 +10,15 @@
 
 @code {
     ElementReference divCanvas;
-    BECanvasComponent _canvasReference;
-    WebGLContext _context;
+    protected BECanvasComponent _canvasReference;
+    protected WebGLContext _context;
     int frameTime = 0;
     DateTime lastFrame;
+    bool textureMapping = true;
 
     float cubeRotation = 0.0f;
 
-    string vsSource = @"
+    string vsSourceColour = @"
     attribute vec4 aVertexPosition;
     attribute vec3 aVertexNormal;
     attribute vec4 aVertexColour;
@@ -42,12 +45,51 @@
     }
     ";
 
-    string fsSource = @"
+    string vsSourceTexture = @"
+    attribute vec4 aVertexPosition;
+    attribute vec3 aVertexNormal;
+    attribute vec2 aTextureCoord;
+
+    uniform mat4 uNormalMatrix;
+    uniform mat4 uModelViewMatrix;
+    uniform mat4 uProjectionMatrix;
+
+    varying highp vec2 vTextureCoord;
+    varying highp vec3 vLighting;
+
+    void main(void) {
+      gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+      vTextureCoord = aTextureCoord;
+
+      highp vec3 ambientLight = vec3(0.3, 0.3, 0.3);
+      highp vec3 directionalLightColor = vec3(1, 1, 1);
+      highp vec3 directionalVector = normalize(vec3(0.85, 0.8, 0.75));
+
+      highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0);
+
+      highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0);
+      vLighting = ambientLight + (directionalLightColor * directional);
+    }
+    ";
+
+    string fsSourceColour = @"
     varying lowp vec4 vColour;
     varying highp vec3 vLighting;
 
     void main(void) {
       gl_FragColor = vec4(vColour.rgb * vLighting, vColour.a);
+    }
+    ";
+
+    string fsSourceTexture = @"
+    varying highp vec2 vTextureCoord;
+    varying highp vec3 vLighting;
+
+    uniform sampler2D uSampler;
+
+    void main(void) {
+      highp vec4 texelColour = texture2D(uSampler, vTextureCoord);
+      gl_FragColor = vec4(texelColour.rgb * vLighting, texelColour.a);
     }
     ";
 
@@ -68,12 +110,23 @@
 
     protected async Task<WebGLProgram> InitShaderProgram()
     {
-        var vertexShader = await LoadShader(ShaderType.VERTEX_SHADER, vsSource);
-        var fragmentShader = await LoadShader(ShaderType.FRAGMENT_SHADER, fsSource);
-
         var shaderProgram = await _context.CreateProgramAsync();
-        await _context.AttachShaderAsync(shaderProgram, vertexShader);
-        await _context.AttachShaderAsync(shaderProgram, fragmentShader);
+
+        if (textureMapping)
+        {
+            var vertexShader = await LoadShader(ShaderType.VERTEX_SHADER, vsSourceTexture);
+            var fragmentShader = await LoadShader(ShaderType.FRAGMENT_SHADER, fsSourceTexture);
+            await _context.AttachShaderAsync(shaderProgram, vertexShader);
+            await _context.AttachShaderAsync(shaderProgram, fragmentShader);
+        }
+        else
+        {
+            var vertexShader = await LoadShader(ShaderType.VERTEX_SHADER, vsSourceColour);
+            var fragmentShader = await LoadShader(ShaderType.FRAGMENT_SHADER, fsSourceColour);
+            await _context.AttachShaderAsync(shaderProgram, vertexShader);
+            await _context.AttachShaderAsync(shaderProgram, fragmentShader);
+        }
+
         await _context.LinkProgramAsync(shaderProgram);
 
         bool status = await _context.GetProgramParameterAsync<bool>(shaderProgram, ProgramParameter.LINK_STATUS);
@@ -230,24 +283,95 @@
         return colourBuffer;
     }
 
+    protected async Task<WebGLBuffer> InitTextureBuffer()
+    {
+        float[] textureCoordinates = new float[]
+        {
+            // Front
+            0.0f,  0.0f,
+            1.0f,  0.0f,
+            1.0f,  1.0f,
+            0.0f,  1.0f,
+            // Back
+            0.0f,  0.0f,
+            1.0f,  0.0f,
+            1.0f,  1.0f,
+            0.0f,  1.0f,
+            // Top
+            0.0f,  0.0f,
+            1.0f,  0.0f,
+            1.0f,  1.0f,
+            0.0f,  1.0f,
+            // Bottom
+            0.0f,  0.0f,
+            1.0f,  0.0f,
+            1.0f,  1.0f,
+            0.0f,  1.0f,
+            // Right
+            0.0f,  0.0f,
+            1.0f,  0.0f,
+            1.0f,  1.0f,
+            0.0f,  1.0f,
+            // Left
+            0.0f,  0.0f,
+            1.0f,  0.0f,
+            1.0f,  1.0f,
+            0.0f,  1.0f
+        };
+
+        var textureBuffer = await _context.CreateBufferAsync();
+        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, textureBuffer);
+        await _context.BufferDataAsync<float>(BufferType.ARRAY_BUFFER, textureCoordinates, BufferUsageHint.STATIC_DRAW);
+
+        return textureBuffer;
+    }
+
     WebGLProgram shaderProgram;
     WebGLBuffer colourBuffer;
+    WebGLBuffer textureBuffer;
     WebGLBuffer positionBuffer;
     WebGLBuffer indexBuffer;
     WebGLBuffer normalBuffer;
+    WebGLTexture texture;
     uint vertexPosition;
     uint vertexColour;
+    uint textureCoord;
     uint vertexNormal;
     WebGLUniformLocation projectionMatrixLocation;
     WebGLUniformLocation modelViewMatrixLocation;
     WebGLUniformLocation normalMatrixLocation;
+    WebGLUniformLocation samplerLocation;
 
-    protected async Task<WebGLTexture> LoadTexture(string url)
+    protected async Task<WebGLTexture> LoadTexture()
     {
         WebGLTexture texture = await _context.CreateTextureAsync();
         await _context.BindTextureAsync(TextureType.TEXTURE_2D, texture);
 
-        // TODO: too tired to do this right now, moving on to lighting
+        Image bmp = Bitmap.FromFile(@"d:\media\photos\me.png");
+        Bitmap img = bmp as Bitmap;
+        
+        // copy out the bytes using interop
+        BitmapData data = img.LockBits(new Rectangle(0, 0, img.Width, img.Height), ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        int bytes = Math.Abs(data.Stride * bmp.Height);
+        byte[] rgbValues = new byte[bytes];
+        System.Runtime.InteropServices.Marshal.Copy(data.Scan0, rgbValues, 0, bytes);
+        img.UnlockBits(data);
+
+        for (int y = 0; y < bmp.Height; y++)
+        {
+            for (int x = 0; x < bmp.Width; x++)
+            {
+                byte b = rgbValues[y * data.Stride + x * 4];
+                rgbValues[y * data.Stride + x * 4] = rgbValues[y * data.Stride + x * 4 + 2];
+                rgbValues[y * data.Stride + x * 4 + 2] = b;
+            }
+        }
+
+        await _context.TexImage2DAsync<byte>(Texture2DType.TEXTURE_2D, 0, Blazor.Extensions.Canvas.WebGL.PixelFormat.RGBA, bmp.Width, bmp.Height, 0, Blazor.Extensions.Canvas.WebGL.PixelFormat.RGBA, PixelType.UNSIGNED_BYTE, rgbValues);
+        @* await _context.GenerateMipmapAsync(TextureType.TEXTURE_2D); *@
+        await _context.TexParameterAsync(TextureType.TEXTURE_2D, TextureParameter.TEXTURE_WRAP_S, (int)TextureParameterValue.CLAMP_TO_EDGE);
+        await _context.TexParameterAsync(TextureType.TEXTURE_2D, TextureParameter.TEXTURE_WRAP_T, (int)TextureParameterValue.CLAMP_TO_EDGE);
+        await _context.TexParameterAsync(TextureType.TEXTURE_2D, TextureParameter.TEXTURE_MIN_FILTER, (int)TextureParameterValue.LINEAR);
 
         return texture;
     }
@@ -259,16 +383,38 @@
         if (firstRender)
         {
             shaderProgram = await InitShaderProgram();
-            colourBuffer = await InitColourBuffer();
+            if (textureMapping)
+            {
+                textureBuffer = await InitTextureBuffer();
+            }
+            else
+            {
+                colourBuffer = await InitColourBuffer();
+            }
             positionBuffer = await InitPositionBuffer();
             indexBuffer = await InitIndexBuffer();
             normalBuffer = await InitNormalBuffer();
+            if (textureMapping)
+            {
+                texture = await LoadTexture();
+            }
             vertexPosition = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexPosition");
-            vertexColour = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexColour");
+            if (!textureMapping)
+            {
+                vertexColour = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexColour");
+            }
             vertexNormal = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aVertexNormal");
+            if (textureMapping)
+            {
+                textureCoord = (uint)await _context.GetAttribLocationAsync(shaderProgram, "aTextureCoord");
+            }
             projectionMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uProjectionMatrix");
             modelViewMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uModelViewMatrix");
             normalMatrixLocation = await _context.GetUniformLocationAsync(shaderProgram, "uNormalMatrix");
+            if (textureMapping)
+            {
+                samplerLocation = await _context.GetUniformLocationAsync(shaderProgram, "uSampler");
+            }
         }
 
         await _context.ClearColorAsync(0, 0, 0, 1);
@@ -297,9 +443,18 @@
         await _context.VertexAttribPointerAsync(vertexPosition, 3, DataType.FLOAT, false, 0, 0);
         await _context.EnableVertexAttribArrayAsync(vertexPosition);
 
-        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
-        await _context.VertexAttribPointerAsync(vertexColour, 4, DataType.FLOAT, false, 0, 0);
-        await _context.EnableVertexAttribArrayAsync(vertexColour);
+        if (textureMapping)
+        {
+            await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, textureBuffer);
+            await _context.VertexAttribPointerAsync(textureCoord, 2, DataType.FLOAT, false, 0, 0);
+            await _context.EnableVertexAttribArrayAsync(textureCoord);
+        }
+        else
+        {
+            await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
+            await _context.VertexAttribPointerAsync(vertexColour, 4, DataType.FLOAT, false, 0, 0);
+            await _context.EnableVertexAttribArrayAsync(vertexColour);
+        }
 
         await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, normalBuffer);
         await _context.VertexAttribPointerAsync(vertexNormal, 3, DataType.FLOAT, false, 0, 0);
@@ -313,7 +468,13 @@
         await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix.Values);
         await _context.UniformMatrixAsync(normalMatrixLocation, false, normalMatrix.Values);
 
-        @* await _context.DrawArraysAsync(Primitive.TRINAGLE_STRIP, 0, 4); *@
+        if (textureMapping)
+        {
+            await _context.ActiveTextureAsync(Texture.TEXTURE0);
+            await _context.BindTextureAsync(TextureType.TEXTURE_2D, texture);
+            await _context.UniformAsync(samplerLocation, 0);
+        }
+
         await _context.DrawElementsAsync(Primitive.TRIANGLES, 36, DataType.UNSIGNED_SHORT, 0);
 
         await _context.EndBatchAsync();
