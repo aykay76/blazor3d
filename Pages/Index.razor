@@ -14,7 +14,7 @@
     protected WebGLContext _context;
     int frameTime = 0;
     DateTime lastFrame;
-    bool textureMapping = true;
+    bool textureMapping = false;
 
     float cubeRotation = 0.0f;
 
@@ -347,7 +347,7 @@
         WebGLTexture texture = await _context.CreateTextureAsync();
         await _context.BindTextureAsync(TextureType.TEXTURE_2D, texture);
 
-        Image bmp = Bitmap.FromFile(@"d:\media\photos\me.png");
+        Image bmp = Bitmap.FromFile(@"/Users/alankelly/Documents/36792847.png");
         Bitmap img = bmp as Bitmap;
         
         // copy out the bytes using interop
@@ -415,6 +415,38 @@
             {
                 samplerLocation = await _context.GetUniformLocationAsync(shaderProgram, "uSampler");
             }
+
+            await _context.UseProgramAsync(shaderProgram);
+
+            await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
+            await _context.VertexAttribPointerAsync(vertexPosition, 3, DataType.FLOAT, false, 0, 0);
+            await _context.EnableVertexAttribArrayAsync(vertexPosition);
+
+            if (textureMapping)
+            {
+                await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, textureBuffer);
+                await _context.VertexAttribPointerAsync(textureCoord, 2, DataType.FLOAT, false, 0, 0);
+                await _context.EnableVertexAttribArrayAsync(textureCoord);
+            }
+            else
+            {
+                await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
+                await _context.VertexAttribPointerAsync(vertexColour, 4, DataType.FLOAT, false, 0, 0);
+                await _context.EnableVertexAttribArrayAsync(vertexColour);
+            }
+
+            await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, normalBuffer);
+            await _context.VertexAttribPointerAsync(vertexNormal, 3, DataType.FLOAT, false, 0, 0);
+            await _context.EnableVertexAttribArrayAsync(vertexNormal);
+
+            await _context.BindBufferAsync(BufferType.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+            if (textureMapping)
+            {
+                await _context.ActiveTextureAsync(Texture.TEXTURE0);
+                await _context.BindTextureAsync(TextureType.TEXTURE_2D, texture);
+                await _context.UniformAsync(samplerLocation, 0);
+            }
         }
 
         await _context.ClearColorAsync(0, 0, 0, 1);
@@ -439,41 +471,9 @@
 
         var normalMatrix = new Matrix().Invert(modelViewMatrix).Transpose();
         
-        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, positionBuffer);
-        await _context.VertexAttribPointerAsync(vertexPosition, 3, DataType.FLOAT, false, 0, 0);
-        await _context.EnableVertexAttribArrayAsync(vertexPosition);
-
-        if (textureMapping)
-        {
-            await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, textureBuffer);
-            await _context.VertexAttribPointerAsync(textureCoord, 2, DataType.FLOAT, false, 0, 0);
-            await _context.EnableVertexAttribArrayAsync(textureCoord);
-        }
-        else
-        {
-            await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, colourBuffer);
-            await _context.VertexAttribPointerAsync(vertexColour, 4, DataType.FLOAT, false, 0, 0);
-            await _context.EnableVertexAttribArrayAsync(vertexColour);
-        }
-
-        await _context.BindBufferAsync(BufferType.ARRAY_BUFFER, normalBuffer);
-        await _context.VertexAttribPointerAsync(vertexNormal, 3, DataType.FLOAT, false, 0, 0);
-        await _context.EnableVertexAttribArrayAsync(vertexNormal);
-
-        await _context.BindBufferAsync(BufferType.ELEMENT_ARRAY_BUFFER, indexBuffer);
-
-        await _context.UseProgramAsync(shaderProgram);
-
         await _context.UniformMatrixAsync(projectionMatrixLocation, false, projectionMatrix.Values);
         await _context.UniformMatrixAsync(modelViewMatrixLocation, false, modelViewMatrix.Values);
         await _context.UniformMatrixAsync(normalMatrixLocation, false, normalMatrix.Values);
-
-        if (textureMapping)
-        {
-            await _context.ActiveTextureAsync(Texture.TEXTURE0);
-            await _context.BindTextureAsync(TextureType.TEXTURE_2D, texture);
-            await _context.UniformAsync(samplerLocation, 0);
-        }
 
         await _context.DrawElementsAsync(Primitive.TRIANGLES, 36, DataType.UNSIGNED_SHORT, 0);
 
