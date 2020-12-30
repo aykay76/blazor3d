@@ -378,10 +378,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _context = await _canvasReference.CreateWebGLAsync();
-
         if (firstRender)
         {
+            _context = await _canvasReference.CreateWebGLAsync();
             shaderProgram = await InitShaderProgram();
             if (textureMapping)
             {
@@ -449,10 +448,9 @@
             }
         }
 
+        await _context.BeginBatchAsync();
         await _context.ClearColorAsync(0, 0, 0, 1);
         await _context.ClearDepthAsync(1.0f);
-
-        await _context.BeginBatchAsync();
         await _context.EnableAsync(EnableCap.DEPTH_TEST);
         await _context.DepthFuncAsync(CompareFunction.LEQUAL);
         await _context.ClearAsync(BufferBits.COLOR_BUFFER_BIT | BufferBits.DEPTH_BUFFER_BIT);
